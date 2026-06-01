@@ -39,6 +39,8 @@ class Config:
     max_model_len: int = 4096
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
+    device_id: int = 0
+    dist_port: int = 2333
     enforce_eager: bool = False
     hf_config: SimpleNamespace | None = None
     eos: int = -1
@@ -51,6 +53,8 @@ class Config:
         assert os.path.isdir(self.model)
         assert self.kvcache_block_size % 256 == 0
         assert 1 <= self.tensor_parallel_size <= 8
+        assert self.device_id >= 0
+        assert 1024 <= self.dist_port <= 65535
         if self.checkpoint is not None:
             self.model = os.path.join(self.model, self.checkpoint)
         self.hf_config = _normalize_hf_config(

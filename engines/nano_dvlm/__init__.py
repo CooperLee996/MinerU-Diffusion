@@ -8,24 +8,18 @@ from shutil import get_terminal_size
 import torch
 from termcolor import cprint
 
-
 NANO_DVLM_DIR = Path(__file__).resolve().parent
 if str(NANO_DVLM_DIR) not in sys.path:
     sys.path.insert(0, str(NANO_DVLM_DIR))
 
+from common import (
+    DEFAULT_GEN_LENGTH,
+    DEFAULT_MAX_LENGTH,
+    STOP_STRINGS,
+    SYSTEM_PROMPT,
+    TASK_PROMPTS,
+)
 from nanovllm import LLM, SamplingParams
-
-
-STOP_STRINGS = ("<|endoftext|>", "<|im_end|>")
-SYSTEM_PROMPT = "You are a helpful assistant."
-TASK_PROMPTS = {
-    "text": "\nText Recognition:",
-    "table": "\nTable Recognition:",
-    "formula": "\nFormula Recognition:",
-    "layout": "\nLayout Analysis:",
-}
-DEFAULT_MAX_LENGTH = 4096
-DEFAULT_GEN_LENGTH = 1024
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -46,6 +40,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--remask-strategy", default="low_confidence_dynamic")
     parser.add_argument("--dynamic-threshold", type=float, default=0.95)
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
+    parser.add_argument("--data-parallel-size", type=int, default=1, help="Number of GPU replicas.")
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.8)
     parser.add_argument("--enforce-eager", action="store_true")
 
@@ -63,6 +58,7 @@ def _print_summary(args: argparse.Namespace, model_path: Path, mask_token_id: in
     cprint(f"{'gen_length':<12}: {args.gen_length}", color="white", flush=True)
     cprint(f"{'block_size':<12}: {args.block_size}", color="white", flush=True)
     cprint(f"{'tp_size':<12}: {args.tensor_parallel_size}", color="white", flush=True)
+    cprint(f"{'dp_size':<12}: {args.data_parallel_size}", color="white", flush=True)
     cprint(f"{'mask_token':<12}: {mask_token_id}", color="white", flush=True)
 
 
@@ -110,10 +106,14 @@ def run(args: argparse.Namespace) -> None:
 
     _print_summary(args, model_path, mask_token_id)
 
+    if args.data_parallel_size > 1 and args.tensor_parallel_size != 1:
+        raise ValueError("Use either --data-parallel-size or --tensor-parallel-size, not both.")
+
     llm = LLM(
         str(model_path),
         enforce_eager=args.enforce_eager,
         tensor_parallel_size=args.tensor_parallel_size,
+        data_parallel_size=args.data_parallel_size,
         mask_token_id=mask_token_id,
         block_size=args.block_size,
         max_model_len=args.max_length,
@@ -138,6 +138,7 @@ def run(args: argparse.Namespace) -> None:
     for stop in STOP_STRINGS:
         response = response.split(stop, 1)[0]
     _print_response(response.strip(), elapsed)
+    llm.exit()
 
 
 __all__ = ["add_arguments", "run"]

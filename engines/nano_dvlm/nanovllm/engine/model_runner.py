@@ -23,8 +23,10 @@ class ModelRunner:
         self.rank = rank
         self.event = event
 
-        dist.init_process_group("nccl", "tcp://localhost:2333", world_size=self.world_size, rank=rank)
-        torch.cuda.set_device(rank)
+        init_method = f"tcp://127.0.0.1:{config.dist_port}"
+        dist.init_process_group("nccl", init_method, world_size=self.world_size, rank=rank)
+        device_id = config.device_id if self.world_size == 1 else rank
+        torch.cuda.set_device(device_id)
         default_dtype = torch.get_default_dtype()
         torch.set_default_dtype(hf_config.torch_dtype)
         torch.set_default_device("cuda")
