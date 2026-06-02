@@ -15,7 +15,7 @@ from typing import Any
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from PIL import Image
 
@@ -195,6 +195,41 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MinerU Nano-DVLM Server", lifespan=lifespan)
+
+
+# ── Prometheus-compatible /metrics (vLLM metric name compatible) ───────────
+
+def _get_scheduler_metrics() -> dict[str, int]:
+    """Extract running/waiting counts from the nano_dvlm scheduler."""
+    try:
+        engine = state.llm._engine
+        from nanovllm.engine.dp_engine import DPLLMEngine
+        if isinstance(engine, DPLLMEngine):
+            # DP mode: scheduler lives inside each worker's LLMEngine
+            return {"running": 0, "waiting": 0, "max_seqs": 0}
+        scheduler = getattr(engine, "scheduler", None)
+        if scheduler is not None:
+            return {
+                "running": len(scheduler.running),
+                "waiting": len(scheduler.waiting),
+                "max_seqs": getattr(scheduler, "max_num_seqs", 0),
+            }
+    except Exception:
+        pass
+    return {"running": 0, "waiting": 0, "max_seqs": 0}
+
+
+@app.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    m = _get_scheduler_metrics() if state.llm is not None else {"running": 0, "waiting": 0, "max_seqs": 0}
+    # Prometheus text format, vLLM-compatible metric names so
+    # mineru-service's VLLMMetricsFetcher can reuse its regex parsers.
+    lines = [
+        f"vllm:num_requests_running{{engine=\"nanovllm\"}} {m['running']}",
+        f"vllm:num_requests_waiting{{engine=\"nanovllm\"}} {m['waiting']}",
+        f"vllm:kv_cache_usage_perc{{engine=\"nanovllm\"}} 0.0",
+    ]
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @app.get("/health")
