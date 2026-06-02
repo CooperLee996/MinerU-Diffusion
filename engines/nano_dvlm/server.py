@@ -246,7 +246,7 @@ async def chat_completions(request: ChatCompletionRequest) -> JSONResponse:
         outputs = await loop.run_in_executor(
             None,
             lambda: state.llm.generate_messages(
-                messages,
+                [messages],  # batch of one conversation
                 sampling_params=sampling_params,
                 use_tqdm=False,
             ),
